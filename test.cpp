@@ -24,11 +24,7 @@ struct Vertex {
 int main() {
   vk::raii::Context ctx{};
 
-  vk::ApplicationInfo appInfo{"Hello Triangle",
-                              VK_MAKE_VERSION(1, 0, 0),
-                              nullptr,
-                              {},
-                              vk::ApiVersion11};
+  vk::ApplicationInfo appInfo{nullptr, {}, nullptr, {}, vk::ApiVersion11};
 
   glfwInit();
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -46,7 +42,8 @@ int main() {
                             vk::KHRDepthStencilResolveExtensionName,
                             vk::KHRCreateRenderpass2ExtensionName,
                             vk::EXTRobustness2ExtensionName,
-                            vk::KHRSwapchainExtensionName};
+                            vk::KHRSwapchainExtensionName,
+                            vk::EXTExtendedDynamicStateExtensionName};
 
   vk::raii::PhysicalDevice physicalDevice{
       instance.enumeratePhysicalDevices().front()};
@@ -194,7 +191,8 @@ int main() {
   vk::PipelineDynamicStateCreateInfo dynamicState{{}, 2, dynamicStates};
 
   pci.get<vk::GraphicsPipelineCreateInfo>()
-      .setFlags({}) // static_cast<vk::PipelineCreateFlags>(~0u)) // RADV driver (24.0.1) crashes with this
+      .setFlags({}) // static_cast<vk::PipelineCreateFlags>(~0u)) // RADV driver
+                    // (24.0.1) crashes with this
       .setStages(stages)
       .setPVertexInputState(&vertexInputInfo)
       .setPInputAssemblyState(&inputAssembly)
@@ -333,9 +331,9 @@ int main() {
         {}, {{0, 0}, {800, 600}}, 1, 0, renderingAttachmentInfo});
 
     cb.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline);
-    cb.bindIndexBuffer2KHR(*index_buffer, 0, sizeof(uint32_t) * 5,
+    cb.bindIndexBuffer2KHR(*index_buffer, 0zu, sizeof(uint32_t) * 5,
                            vk::IndexType::eUint32);
-    cb.bindVertexBuffers(0, {*vertex_buffer}, {0});
+    cb.bindVertexBuffers2EXT(0, *vertex_buffer, 0zu, sizeof(Vertex) * 4);
     cb.drawIndexed(6, 1, 0, 0, 0);
 
     cb.endRenderingKHR();
