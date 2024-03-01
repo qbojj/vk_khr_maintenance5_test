@@ -24,7 +24,7 @@ struct Vertex {
 int main() {
   vk::raii::Context ctx{};
 
-  vk::ApplicationInfo appInfo{nullptr, {}, nullptr, {}, vk::ApiVersion11};
+  vk::ApplicationInfo appInfo{nullptr, {}, nullptr, {}, vk::ApiVersion13};
 
   glfwInit();
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -37,13 +37,8 @@ int main() {
       ctx, vk::InstanceCreateInfo{
                {}, &appInfo, 0, nullptr, glfwExtensionCount, exts}};
 
-  const char *exts_dev[] = {vk::KHRMaintenance5ExtensionName,
-                            vk::KHRDynamicRenderingExtensionName,
-                            vk::KHRDepthStencilResolveExtensionName,
-                            vk::KHRCreateRenderpass2ExtensionName,
-                            vk::EXTRobustness2ExtensionName,
-                            vk::KHRSwapchainExtensionName,
-                            vk::EXTExtendedDynamicStateExtensionName};
+  const char *exts_dev[] = {vk::EXTRobustness2ExtensionName,
+                            vk::KHRSwapchainExtensionName};
 
   vk::raii::PhysicalDevice physicalDevice{
       instance.enumeratePhysicalDevices().front()};
@@ -60,8 +55,6 @@ int main() {
 
   dev_create_info.get<vk::PhysicalDeviceFeatures2>()
       .features.setRobustBufferAccess(true);
-  dev_create_info.get<vk::PhysicalDeviceMaintenance5FeaturesKHR>()
-      .setMaintenance5(true);
   dev_create_info.get<vk::PhysicalDeviceDynamicRenderingFeatures>()
       .setDynamicRendering(true);
   dev_create_info.get<vk::PhysicalDeviceRobustness2FeaturesEXT>()
@@ -121,28 +114,15 @@ int main() {
   vk::raii::PipelineLayout pipelineLayout{device, {{}, 0, nullptr}};
 
   vk::StructureChain<vk::GraphicsPipelineCreateInfo,
-                     vk::PipelineRenderingCreateInfo,
-                     vk::PipelineCreateFlags2CreateInfoKHR>
+                     vk::PipelineRenderingCreateInfo>
       pci;
 
-#if 1
-  vk::StructureChain<vk::PipelineShaderStageCreateInfo,
-                     vk::ShaderModuleCreateInfo>
-      stages_storage[] = {
-          {{{}, vk::ShaderStageFlagBits::eVertex, {}, "main"}, {{}, vert_spv}},
-          {{{}, vk::ShaderStageFlagBits::eFragment, {}, "main"},
-           {{}, frag_spv}}};
-
-  vk::PipelineShaderStageCreateInfo stages[] = {stages_storage[0].get<>(),
-                                                stages_storage[1].get<>()};
-#else
   vk::raii::ShaderModule vert{device, {{}, vert_spv}};
   vk::raii::ShaderModule frag{device, {{}, frag_spv}};
 
   vk::PipelineShaderStageCreateInfo stages[] = {
       {{}, vk::ShaderStageFlagBits::eVertex, *vert, "main"},
       {{}, vk::ShaderStageFlagBits::eFragment, *frag, "main"}};
-#endif
 
   vk::VertexInputBindingDescription bindingDescription{
       0, sizeof(Vertex), vk::VertexInputRate::eVertex};
@@ -191,8 +171,7 @@ int main() {
   vk::PipelineDynamicStateCreateInfo dynamicState{{}, 2, dynamicStates};
 
   pci.get<vk::GraphicsPipelineCreateInfo>()
-      .setFlags({}) // static_cast<vk::PipelineCreateFlags>(~0u)) // RADV driver
-                    // (24.0.1) crashes with this
+      .setFlags({})
       .setStages(stages)
       .setPVertexInputState(&vertexInputInfo)
       .setPInputAssemblyState(&inputAssembly)
@@ -207,9 +186,6 @@ int main() {
 
   vk::Format formats[] = {vk::Format::eB8G8R8A8Unorm};
   pci.get<vk::PipelineRenderingCreateInfo>().setColorAttachmentFormats(formats);
-
-  pci.get<vk::PipelineCreateFlags2CreateInfoKHR>().setFlags(
-      vk::PipelineCreateFlagBits2KHR::eAllowDerivatives);
 
   vk::raii::Pipeline pipeline{device, nullptr, pci.get<>()};
 
@@ -300,10 +276,10 @@ int main() {
     index_buffer.bindMemory(*index_buffer_memory, 0);
     vertex_buffer.bindMemory(*vertex_buffer_memory, 0);
 
-    uint32_t indices[] = {0, 1, 2, 3, 2, 999};
+    uint32_t indices[] = {0, 1, 2, 3, 0, 1};
     Vertex vertices[] = {{{-0.5f, -0.5f, 0.0f}, {255, 0, 0, 255}},
                          {{0.5f, -0.5f, 0.0f}, {0, 255, 0, 255}},
-                         {{0.5f, 0.5f, 0.0f}, {0, 0, 255, 255}},
+                         {{0.5f, 0.0f, 0.0f}, {0, 0, 255, 255}},
                          {{-0.5f, 0.5f, 0.0f}, {255, 255, 255, 255}}};
 
     void *index_buffer_data = index_buffer_memory.mapMemory(0, sizeof(indices));
@@ -327,16 +303,15 @@ int main() {
         vk::AttachmentLoadOp::eClear,
         vk::AttachmentStoreOp::eStore,
         clearValue};
-    cb.beginRenderingKHR(vk::RenderingInfo{
+    cb.beginRendering(vk::RenderingInfo{
         {}, {{0, 0}, {800, 600}}, 1, 0, renderingAttachmentInfo});
 
     cb.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline);
-    cb.bindIndexBuffer2KHR(*index_buffer, 0zu, sizeof(uint32_t) * 5,
-                           vk::IndexType::eUint32);
-    cb.bindVertexBuffers2EXT(0, *vertex_buffer, 0zu, sizeof(Vertex) * 4);
+    cb.bindIndexBuffer(*index_buffer, 0, vk::IndexType::eUint32);
+    cb.bindVertexBuffers2(0, *vertex_buffer, 0zu, sizeof(Vertex) * 3);
     cb.drawIndexed(6, 1, 0, 0, 0);
 
-    cb.endRenderingKHR();
+    cb.endRendering();
 
     cb.pipelineBarrier(
         vk::PipelineStageFlagBits::eColorAttachmentOutput,
@@ -357,45 +332,7 @@ int main() {
     vk::SubmitInfo si{*imageAvailableSemaphore, waitStages, *cb,
                       *renderFinishedSemaphore};
     queue.submit(si);
-
-    vk::ImageCreateInfo ici{{},
-                            vk::ImageType::e2D,
-                            vk::Format::eB8G8R8A8Unorm,
-                            vk::Extent3D{800, 600, 1},
-                            1,
-                            1,
-                            vk::SampleCountFlagBits::e1,
-                            vk::ImageTiling::eLinear,
-                            vk::ImageUsageFlagBits::eColorAttachment,
-                            vk::SharingMode::eExclusive,
-                            0,
-                            nullptr,
-                            vk::ImageLayout::eUndefined};
-
-    vk::ImageSubresource2KHR isr{{vk::ImageAspectFlagBits::eColor, 0, 0}};
-
-    auto sr_layout =
-        device.getImageSubresourceLayoutKHR({&ici, &isr}).subresourceLayout;
-
-    std::cout << "Subresource layout: " << sr_layout.offset << " "
-              << sr_layout.size << " " << sr_layout.rowPitch << " "
-              << sr_layout.arrayPitch << " " << sr_layout.depthPitch
-              << std::endl;
-
-    vk::Format framebuffer_format = vk::Format::eB8G8R8A8Unorm;
-    auto granularity = device.getRenderingAreaGranularityKHR(
-        vk::RenderingAreaInfoKHR{0, framebuffer_format});
-
-    std::cout << "Granularity: " << granularity.width << "x"
-              << granularity.height << std::endl;
-
-    std::cout << "dynamic rendering ptr: "
-              << device.getProcAddr("vkCmdBeginRendering") << std::endl;
-    std::cout << "dynamic rendering KHR ptr: "
-              << device.getProcAddr("vkCmdBeginRenderingKHR") << std::endl;
-
     (void)queue.presentKHR({*renderFinishedSemaphore, *swapchain, idx});
     device.waitIdle();
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
   }
 }
