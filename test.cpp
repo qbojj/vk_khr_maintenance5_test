@@ -1,3 +1,5 @@
+#define VULKAN_HPP_ENABLE_DYNAMIC_LOADER_TOOL 0
+
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_raii.hpp>
 
@@ -21,32 +23,54 @@ struct Vertex {
   glm::u8vec4 color;
 };
 
-int main() {
-  vk::raii::Context ctx{};
+void err_fun(int, const char *msg) {
+  std::cerr << "GLFW error: " << msg << std::endl;
+}
 
+int main() {
   vk::ApplicationInfo appInfo{nullptr, {}, nullptr, {}, vk::ApiVersion11};
 
+  glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11);
   glfwInit();
+  glfwSetErrorCallback(err_fun);
+
+  if (!glfwVulkanSupported())
+    throw std::runtime_error("Vulkan not supported!");
+
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
   GLFWwindow *window = glfwCreateWindow(800, 600, "Vulkan", nullptr, nullptr);
 
+  std::cout << "GLFW get proc addr: "
+            << reinterpret_cast<void *>(glfwGetInstanceProcAddress(nullptr, "vkGetInstanceProcAddr")) << std::endl;
+
+  vk::raii::Context ctx{
+    reinterpret_cast<PFN_vkGetInstanceProcAddr>(glfwGetInstanceProcAddress(nullptr, "vkGetInstanceProcAddr")),
+  };
+
   uint32_t glfwExtensionCount = 0;
   auto *exts = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
+
+  std::cout << "GLFW extensions (" << glfwExtensionCount << "): " << std::endl;
+  for (uint32_t i = 0; i < glfwExtensionCount; i++)
+    std::cout << "  " << exts[i] << std::endl;
 
   vk::raii::Instance instance{
       ctx, vk::InstanceCreateInfo{
                {}, &appInfo, 0, nullptr, glfwExtensionCount, exts}};
 
-  const char *exts_dev[] = {vk::KHRMaintenance5ExtensionName,
-                            vk::KHRDynamicRenderingExtensionName,
-                            vk::KHRDepthStencilResolveExtensionName,
-                            vk::KHRCreateRenderpass2ExtensionName,
-                            vk::EXTRobustness2ExtensionName,
-                            vk::KHRSwapchainExtensionName,
-                            vk::EXTExtendedDynamicStateExtensionName};
+  const char *exts_dev[] = {
+      vk::KHRMaintenance5ExtensionName,
+      vk::KHRDynamicRenderingExtensionName,
+      vk::KHRDepthStencilResolveExtensionName,
+      vk::KHRCreateRenderpass2ExtensionName,
+      vk::EXTRobustness2ExtensionName,
+      vk::KHRSwapchainExtensionName,
+      vk::EXTExtendedDynamicStateExtensionName,
+  };
 
   vk::raii::PhysicalDevice physicalDevice{
-      instance.enumeratePhysicalDevices().front()};
+      instance.enumeratePhysicalDevices().front(),
+  };
 
   float queuePriorities[] = {1.0f};
   vk::DeviceQueueCreateInfo queueCreateInfo{{}, 0, queuePriorities};
@@ -131,10 +155,13 @@ int main() {
       stages_storage[] = {
           {{{}, vk::ShaderStageFlagBits::eVertex, {}, "main"}, {{}, vert_spv}},
           {{{}, vk::ShaderStageFlagBits::eFragment, {}, "main"},
-           {{}, frag_spv}}};
+           {{}, frag_spv}},
+      };
 
-  vk::PipelineShaderStageCreateInfo stages[] = {stages_storage[0].get<>(),
-                                                stages_storage[1].get<>()};
+  vk::PipelineShaderStageCreateInfo stages[] = {
+      stages_storage[0].get<>(),
+      stages_storage[1].get<>(),
+  };
 #else
   vk::raii::ShaderModule vert{device, {{}, vert_spv}};
   vk::raii::ShaderModule frag{device, {{}, frag_spv}};
@@ -145,15 +172,25 @@ int main() {
 #endif
 
   vk::VertexInputBindingDescription bindingDescription{
-      0, sizeof(Vertex), vk::VertexInputRate::eVertex};
+      0,
+      sizeof(Vertex),
+      vk::VertexInputRate::eVertex,
+  };
   vk::VertexInputAttributeDescription attributeDescriptions[] = {
       {0, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, pos)},
-      {1, 0, vk::Format::eR8G8B8A8Unorm, offsetof(Vertex, color)}};
+      {1, 0, vk::Format::eR8G8B8A8Unorm, offsetof(Vertex, color)},
+  };
   vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
-      {}, bindingDescription, attributeDescriptions};
+      {},
+      bindingDescription,
+      attributeDescriptions,
+  };
 
   vk::PipelineInputAssemblyStateCreateInfo inputAssembly{
-      {}, vk::PrimitiveTopology::eTriangleList, false};
+      {},
+      vk::PrimitiveTopology::eTriangleList,
+      false,
+  };
 
   vk::PipelineViewportStateCreateInfo viewportState{{}, 1, nullptr, 1, nullptr};
 
@@ -168,7 +205,8 @@ int main() {
       0.0f,
       0.0f,
       0.0f,
-      1.0f};
+      1.0f,
+  };
 
   vk::PipelineMultisampleStateCreateInfo multisampling{};
   vk::PipelineDepthStencilStateCreateInfo depthStencil{};
@@ -181,13 +219,20 @@ int main() {
       vk::BlendFactor::eZero,
       vk::BlendOp::eAdd,
       vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
-          vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA};
+          vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA,
+  };
 
   vk::PipelineColorBlendStateCreateInfo colorBlending{
-      {}, false, vk::LogicOp::eCopy, colorBlendAttachment};
+      {},
+      false,
+      vk::LogicOp::eCopy,
+      colorBlendAttachment,
+  };
 
-  vk::DynamicState dynamicStates[] = {vk::DynamicState::eViewport,
-                                      vk::DynamicState::eScissor};
+  vk::DynamicState dynamicStates[] = {
+      vk::DynamicState::eViewport,
+      vk::DynamicState::eScissor,
+  };
   vk::PipelineDynamicStateCreateInfo dynamicState{{}, 2, dynamicStates};
 
   pci.get<vk::GraphicsPipelineCreateInfo>()
@@ -226,40 +271,50 @@ int main() {
 
     cb.begin({vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
 
-    cb.pipelineBarrier(
-        vk::PipelineStageFlagBits::eColorAttachmentOutput,
-        vk::PipelineStageFlagBits::eColorAttachmentOutput, {}, {}, {},
-        vk::ImageMemoryBarrier{vk::AccessFlagBits::eNone,
-                               vk::AccessFlagBits::eColorAttachmentWrite |
-                                   vk::AccessFlagBits::eColorAttachmentRead,
-                               vk::ImageLayout::eUndefined,
-                               vk::ImageLayout::eColorAttachmentOptimal,
-                               vk::QueueFamilyIgnored,
-                               vk::QueueFamilyIgnored,
-                               images[idx],
-                               {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}});
+    cb.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                       vk::PipelineStageFlagBits::eColorAttachmentOutput, {},
+                       {}, {},
+                       vk::ImageMemoryBarrier{
+                           vk::AccessFlagBits::eNone,
+                           vk::AccessFlagBits::eColorAttachmentWrite |
+                               vk::AccessFlagBits::eColorAttachmentRead,
+                           vk::ImageLayout::eUndefined,
+                           vk::ImageLayout::eColorAttachmentOptimal,
+                           vk::QueueFamilyIgnored,
+                           vk::QueueFamilyIgnored,
+                           images[idx],
+                           {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1},
+                       });
 
     cb.setViewport(0, {vk::Viewport{0.0f, 0.0f, 800.0f, 600.0f, 0.0f, 1.0f}});
     cb.setScissor(0, {vk::Rect2D{{0, 0}, {800, 600}}});
 
     vk::StructureChain<vk::BufferCreateInfo, vk::BufferUsageFlags2CreateInfoKHR>
-        indexBCI{vk::BufferCreateInfo{{},
-                                      sizeof(uint32_t) * 6,
-                                      static_cast<vk::BufferUsageFlags>(~0u),
-                                      vk::SharingMode::eExclusive,
-                                      0,
-                                      nullptr},
-                 {vk::BufferUsageFlagBits2KHR::eIndexBuffer}};
+        indexBCI{
+            vk::BufferCreateInfo{
+                {},
+                sizeof(uint32_t) * 6,
+                static_cast<vk::BufferUsageFlags>(~0u),
+                vk::SharingMode::eExclusive,
+                0,
+                nullptr,
+            },
+            {vk::BufferUsageFlagBits2KHR::eIndexBuffer},
+        };
     vk::raii::Buffer index_buffer{device, indexBCI.get<>()};
 
     vk::StructureChain<vk::BufferCreateInfo, vk::BufferUsageFlags2CreateInfoKHR>
-        vertexBCI{vk::BufferCreateInfo{{},
-                                       sizeof(Vertex) * 4,
-                                       static_cast<vk::BufferUsageFlags>(~0u),
-                                       vk::SharingMode::eExclusive,
-                                       0,
-                                       nullptr},
-                  {vk::BufferUsageFlagBits2KHR::eVertexBuffer}};
+        vertexBCI{
+            vk::BufferCreateInfo{
+                {},
+                sizeof(Vertex) * 4,
+                static_cast<vk::BufferUsageFlags>(~0u),
+                vk::SharingMode::eExclusive,
+                0,
+                nullptr,
+            },
+            {vk::BufferUsageFlagBits2KHR::eVertexBuffer},
+        };
     vk::raii::Buffer vertex_buffer{device, vertexBCI.get<>()};
 
     vk::MemoryRequirements index_buffer_reqs =
@@ -290,21 +345,27 @@ int main() {
     }
 
     vk::raii::DeviceMemory index_buffer_memory{
-        device, vk::MemoryAllocateInfo{index_buffer_reqs.size,
-                                       index_buffer_memory_type}};
+        device,
+        vk::MemoryAllocateInfo{index_buffer_reqs.size,
+                               index_buffer_memory_type},
+    };
 
     vk::raii::DeviceMemory vertex_buffer_memory{
-        device, vk::MemoryAllocateInfo{vertex_buffer_reqs.size,
-                                       vertex_buffer_memory_type}};
+        device,
+        vk::MemoryAllocateInfo{vertex_buffer_reqs.size,
+                               vertex_buffer_memory_type},
+    };
 
     index_buffer.bindMemory(*index_buffer_memory, 0);
     vertex_buffer.bindMemory(*vertex_buffer_memory, 0);
 
     uint32_t indices[] = {0, 1, 2, 3, 2, 999};
-    Vertex vertices[] = {{{-0.5f, -0.5f, 0.0f}, {255, 0, 0, 255}},
-                         {{0.5f, -0.5f, 0.0f}, {0, 255, 0, 255}},
-                         {{0.5f, 0.5f, 0.0f}, {0, 0, 255, 255}},
-                         {{-0.5f, 0.5f, 0.0f}, {255, 255, 255, 255}}};
+    Vertex vertices[] = {
+        {{-0.5f, -0.5f, 0.0f}, {255, 0, 0, 255}},
+        {{0.5f, -0.5f, 0.0f}, {0, 255, 0, 255}},
+        {{0.5f, 0.5f, 0.0f}, {0, 0, 255, 255}},
+        {{-0.5f, 0.5f, 0.0f}, {255, 255, 255, 255}},
+    };
 
     void *index_buffer_data = index_buffer_memory.mapMemory(0, sizeof(indices));
     memcpy(index_buffer_data, indices, sizeof(indices));
@@ -326,9 +387,15 @@ int main() {
         vk::ImageLayout::eUndefined,
         vk::AttachmentLoadOp::eClear,
         vk::AttachmentStoreOp::eStore,
-        clearValue};
+        clearValue,
+    };
     cb.beginRenderingKHR(vk::RenderingInfo{
-        {}, {{0, 0}, {800, 600}}, 1, 0, renderingAttachmentInfo});
+        {},
+        {{0, 0}, {800, 600}},
+        1,
+        0,
+        renderingAttachmentInfo,
+    });
 
     cb.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline);
     cb.bindIndexBuffer2KHR(*index_buffer, 0zu, sizeof(uint32_t) * 5,
@@ -338,39 +405,46 @@ int main() {
 
     cb.endRenderingKHR();
 
-    cb.pipelineBarrier(
-        vk::PipelineStageFlagBits::eColorAttachmentOutput,
-        vk::PipelineStageFlagBits::eBottomOfPipe, {}, {}, {},
-        vk::ImageMemoryBarrier{vk::AccessFlagBits::eColorAttachmentWrite,
-                               vk::AccessFlagBits::eNone,
-                               vk::ImageLayout::eColorAttachmentOptimal,
-                               vk::ImageLayout::ePresentSrcKHR,
-                               vk::QueueFamilyIgnored,
-                               vk::QueueFamilyIgnored,
-                               images[idx],
-                               {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}});
+    cb.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                       vk::PipelineStageFlagBits::eBottomOfPipe, {}, {}, {},
+                       vk::ImageMemoryBarrier{
+                           vk::AccessFlagBits::eColorAttachmentWrite,
+                           vk::AccessFlagBits::eNone,
+                           vk::ImageLayout::eColorAttachmentOptimal,
+                           vk::ImageLayout::ePresentSrcKHR,
+                           vk::QueueFamilyIgnored,
+                           vk::QueueFamilyIgnored,
+                           images[idx],
+                           {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1},
+                       });
 
     cb.end();
 
     vk::PipelineStageFlags waitStages[] = {
         vk::PipelineStageFlagBits::eColorAttachmentOutput};
-    vk::SubmitInfo si{*imageAvailableSemaphore, waitStages, *cb,
-                      *renderFinishedSemaphore};
+    vk::SubmitInfo si{
+        *imageAvailableSemaphore,
+        waitStages,
+        *cb,
+        *renderFinishedSemaphore,
+    };
     queue.submit(si);
 
-    vk::ImageCreateInfo ici{{},
-                            vk::ImageType::e2D,
-                            vk::Format::eB8G8R8A8Unorm,
-                            vk::Extent3D{800, 600, 1},
-                            1,
-                            1,
-                            vk::SampleCountFlagBits::e1,
-                            vk::ImageTiling::eLinear,
-                            vk::ImageUsageFlagBits::eColorAttachment,
-                            vk::SharingMode::eExclusive,
-                            0,
-                            nullptr,
-                            vk::ImageLayout::eUndefined};
+    vk::ImageCreateInfo ici{
+        {},
+        vk::ImageType::e2D,
+        vk::Format::eB8G8R8A8Unorm,
+        vk::Extent3D{800, 600, 1},
+        1,
+        1,
+        vk::SampleCountFlagBits::e1,
+        vk::ImageTiling::eLinear,
+        vk::ImageUsageFlagBits::eColorAttachment,
+        vk::SharingMode::eExclusive,
+        0,
+        nullptr,
+        vk::ImageLayout::eUndefined,
+    };
 
     vk::ImageSubresource2KHR isr{{vk::ImageAspectFlagBits::eColor, 0, 0}};
 
