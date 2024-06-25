@@ -9,6 +9,7 @@
 #include <chrono>
 #include <iostream>
 #include <thread>
+#include <array>
 
 const uint32_t vert_spv[] = {
 #include "vert.spv"
@@ -29,6 +30,7 @@ void err_fun(int, const char *msg) {
 
 int main() {
   vk::ApplicationInfo appInfo{nullptr, {}, nullptr, {}, vk::ApiVersion11};
+  std::cout << "vulkan version 1.1\n";
 
   glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11);
   glfwInit();
@@ -68,6 +70,10 @@ int main() {
       vk::EXTExtendedDynamicStateExtensionName,
   };
 
+  std::cout << "dev extensions:\n";
+  for (auto ext : exts_dev)
+    std::cout << '\t' << ext << "\n";
+
   vk::raii::PhysicalDevice physicalDevice{
       instance.enumeratePhysicalDevices().front(),
   };
@@ -92,6 +98,22 @@ int main() {
       .setRobustBufferAccess2(true);
 
   vk::raii::Device device{physicalDevice, dev_create_info.get<>()};
+
+  // list functions
+  auto fn_names = {
+    "vkCmdBeginRendering",
+    "vkCmdBeginRenderingKHR",
+    "vkCmdSetEvent2",
+    "vkCmdSetEvent2KHR",
+    "vkCmdSetDepthTestEnable",
+    "vkCmdSetDepthTestEnableEXT",
+  };
+
+  std::cout << "functions available:\n";
+  for (auto &fn_name : fn_names) {
+    auto fn_ptr = device.getProcAddr(fn_name);
+    std::cout << "\t" << fn_name << ": " << reinterpret_cast<void *>(fn_ptr) << std::endl;
+  }
 
   VkSurfaceKHR surface_;
   if (glfwCreateWindowSurface(*instance, window, nullptr, &surface_) < 0)
@@ -462,11 +484,6 @@ int main() {
 
     std::cout << "Granularity: " << granularity.width << "x"
               << granularity.height << std::endl;
-
-    std::cout << "dynamic rendering ptr: "
-              << device.getProcAddr("vkCmdBeginRendering") << std::endl;
-    std::cout << "dynamic rendering KHR ptr: "
-              << device.getProcAddr("vkCmdBeginRenderingKHR") << std::endl;
 
     (void)queue.presentKHR({*renderFinishedSemaphore, *swapchain, idx});
     device.waitIdle();
